@@ -29,3 +29,7 @@ class ImageKitAPI:
             options=DeleteFolderRequestOptions(folder_path=folder_path)
         )
         return response
+    
+    def update_image(self, file_id, file, file_name, folder_path):
+        self.delete_image(file_id)
+        return self.upload_image(file, file_name, folder_path)
