@@ -2,6 +2,8 @@
 import base64
 import io
 import os
+
+import requests
 from CONSTANTS import get_imagekit_instance
 
 imagekit_api = get_imagekit_instance()
@@ -17,7 +19,7 @@ def upload_description(folder_path, product_name, description):
         file_name=f"description.txt",
         folder_path=folder_path,
     )
-    
+
     return response
 
 def update_description(folder_path, product_name, description):
@@ -50,3 +52,7 @@ def get_file_path(base_path, *args):
     file_path = os.path.join(base_path, *args)
     file_path = file_path.replace(' ', '_')
     return file_path
+
+def get_content_from_url(url):
+    response = requests.get(url)
+    return response
