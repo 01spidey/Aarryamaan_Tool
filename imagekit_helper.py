@@ -3,6 +3,7 @@ from imagekitio.models.UploadFileRequestOptions import UploadFileRequestOptions
 from imagekitio.models.DeleteFolderRequestOptions import DeleteFolderRequestOptions
 from imagekitio.models.MoveFolderRequestOptions import MoveFolderRequestOptions
 from imagekitio.models.CreateFolderRequestOptions import CreateFolderRequestOptions
+from imagekitio.models.UpdateFileRequestOptions import UpdateFileRequestOptions
 from imagekitio.models.ListAndSearchFileRequestOptions import (
     ListAndSearchFileRequestOptions,
 )
@@ -16,7 +17,7 @@ class ImageKitAPI:
             private_key=private_key, public_key=public_key, url_endpoint=url_endpoint
         )
 
-    def upload_image(self, file, file_name, folder_path):
+    def upload_file(self, file, file_name, folder_path):
         response = self.imagekit_api.upload_file(
             file=file,
             file_name=file_name,
@@ -25,7 +26,7 @@ class ImageKitAPI:
 
         return response.response_metadata.raw
 
-    def delete_image(self, file_id):
+    def delete_file(self, file_id):
         response = self.imagekit_api.delete_file(file_id)
         return response.response_metadata.raw
 
@@ -36,8 +37,8 @@ class ImageKitAPI:
         return response
 
     def update_image(self, file_id, file, file_name, folder_path):
-        self.delete_image(file_id)
-        return self.upload_image(file, file_name, folder_path)
+        self.delete_file(file_id)
+        return self.upload_file(file, file_name, folder_path)
 
     def upload_file(self, file, file_name, folder_path):
         return self.imagekit_api.upload_file(
