@@ -7,15 +7,66 @@ from utils import (
     get_content_from_url,
 )
 from CONSTANTS import get_imagekit_instance, IMAGEKIT_BASE_PATH
+from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required, JWTManager
+from flask_cors import CORS
+from Crypto.Cipher import AES
+import base64 
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import unpad
+import json
+
+import os
+from dotenv import load_dotenv
+
+load_dotenv()  # Load environment variables from .env file
 
 app = Flask(__name__)
 
+app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET")  # Change this!
+jwt = JWTManager(app)
+CORS(app)  # Enable CORS for all routes
+
 imagekit_api = get_imagekit_instance()
+
+# Load the secret key from environment variables
+SECRET_KEY = os.getenv('ENCRYPTION_SECRET_KEY')
+
+
+def decrypt_data(encrypted_data):
+    enc = base64.b64decode(encrypted_data)
+    derived_key = base64.b64decode(SECRET_KEY)
+    iv = "1020304050607080"
+    cipher = AES.new(derived_key, AES.MODE_CBC, iv.encode('utf-8'))
+    decrypted_bytes = (unpad(cipher.decrypt(enc),16))
+    decrypt_data = decrypted_bytes.decode('utf-8')
+    return decrypt_data
 
 
 @app.route("/")
 def sample():
     return jsonify({"message": "Vanakkam Bro!"})
+
+@app.route("/login", methods=["POST"])
+def login():
+    encrypted_email = request.json.get("email", None)
+    encrypted_password = request.json.get("password", None)
+    
+    if encrypted_email is None or encrypted_password is None:
+        return jsonify({"msg": "Invalid data"}), 400
+    
+    email = decrypt_data(encrypted_email)
+    password = decrypt_data(encrypted_password)
+
+    
+    if email is None or password is None:
+        return jsonify({"msg": "Decryption failed"}), 400
+    
+    if email != "aarryamaanwebsite@gmail.com" or password != "website@gmail":
+        return jsonify({"msg": "Bad username or password"}), 401
+
+    access_token = create_access_token(identity=email)
+    return jsonify(access_token=access_token)
+
 
 
 @app.route("/upload_product", methods=["POST"])

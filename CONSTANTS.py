@@ -14,6 +14,7 @@ def get_imagekit_instance():
     if imagekit_api:
         return imagekit_api
     else:
+        print(os.getenv("IMAGEKIT_PUBLIC_KEY"))
         imagekit_api = ImageKitAPI(
             public_key=os.getenv("IMAGEKIT_PUBLIC_KEY"),
             private_key=os.getenv("IMAGEKIT_PRIVATE_KEY"),
