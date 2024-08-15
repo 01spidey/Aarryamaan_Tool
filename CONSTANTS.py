@@ -6,7 +6,8 @@ load_dotenv()
 
 imagekit_api = None
 
-IMAGEKIT_BASE_PATH = "Aarryamaan_Website_Images/Products_Page/iloveimg-resized"
+IMAGEKIT_BASE_PATH = "Aarryamaan Website Images/Products Page/iloveimg-resized"
+
 
 def get_imagekit_instance():
     global imagekit_api

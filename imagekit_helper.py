@@ -7,15 +7,21 @@ from imagekitio.models.UpdateFileRequestOptions import UpdateFileRequestOptions
 from imagekitio.models.ListAndSearchFileRequestOptions import (
     ListAndSearchFileRequestOptions,
 )
+import urllib.parse
+
+import requests
+from requests_toolbelt import MultipartEncoder
+import base64
 
 
 class ImageKitAPI:
-    base_path = "/Aaaryamaan_Asset_Files/"
 
     def __init__(self, public_key, private_key, url_endpoint):
         self.imagekit_api = ImageKit(
             private_key=private_key, public_key=public_key, url_endpoint=url_endpoint
         )
+        self.public_key = public_key
+        self.private_key = private_key
 
     def upload_file(self, file, file_name, folder_path):
         response = self.imagekit_api.upload_file(
@@ -40,15 +46,7 @@ class ImageKitAPI:
         self.delete_file(file_id)
         return self.upload_file(file, file_name, folder_path)
 
-    def upload_file(self, file, file_name, folder_path):
-        return self.imagekit_api.upload_file(
-            file, file_name, options=UploadFileRequestOptions(folder=folder_path)
-        )
-
     def move_folder(self, source_folder_path, destination_folder_path):
-
-        print(f"\nFrom: {source_folder_path}\nTo: {destination_folder_path}\n")
-
         return self.imagekit_api.move_folder(
             options=MoveFolderRequestOptions(
                 source_folder_path=source_folder_path,
