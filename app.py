@@ -19,6 +19,7 @@ import base64
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import unpad
 import json
+from flask_caching import Cache
 
 import os
 from dotenv import load_dotenv
@@ -27,7 +28,8 @@ load_dotenv()  # Load environment variables from .env file
 
 app = Flask(__name__)
 
-app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET")  # Change this!
+app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET")
+
 jwt = JWTManager(app)
 CORS(
     app, origins=["http://localhost:5173", "http://127.0.0.1:5000"]
@@ -37,6 +39,11 @@ imagekit_api = get_imagekit_instance()
 
 # Load the secret key from environment variables
 SECRET_KEY = os.getenv("ENCRYPTION_SECRET_KEY")
+
+# Configure caching
+app.config["CACHE_TYPE"] = "SimpleCache"  # or "RedisCache" for production
+app.config["CACHE_DEFAULT_TIMEOUT"] = 300  # cache timeout in seconds
+cache = Cache(app)
 
 
 def decrypt_data(encrypted_data):
@@ -103,6 +110,9 @@ def upload_product():
                 factory_image, f"factory_img", f"{folder_path}/Factory Images"
             )
 
+        # Invalidate cache for the get_products endpoint
+        cache.delete_memoized(get_products)
+
         return jsonify({"message": "Product uploaded successfully"})
 
     except Exception as e:
@@ -123,6 +133,9 @@ def upload_factory_image():
         result = imagekit_api.upload_file(
             factory_image_data, f"factory_img", f"{folder_path}/Factory Images"
         )
+
+        # Invalidate cache for the get_products endpoint
+        cache.delete_memoized(get_products)
 
         return jsonify(
             {
@@ -163,6 +176,9 @@ def update_product_info():
 
             update_name(folder_path, old_product_name, new_product_name)
 
+        # Invalidate cache for the get_products endpoint
+        cache.delete_memoized(get_products)
+
         return jsonify({"message": "Product updated successfully"})
 
     except Exception as e:
@@ -184,6 +200,9 @@ def update_image():
         result = imagekit_api.upload_file(
             image_data, image_type, f"{folder_path}/{image_type}"
         )
+
+        # Invalidate cache for the get_products endpoint
+        cache.delete_memoized(get_products)
 
         return jsonify(
             {
@@ -207,6 +226,9 @@ def delete_product():
         folder_path = get_file_path(IMAGEKIT_BASE_PATH, product_category, product_name)
 
         imagekit_api.delete_folder(folder_path)
+        
+        # Invalidate cache for the get_products endpoint
+        cache.delete_memoized(get_products)
 
         return jsonify({"message": "Product deleted successfully"})
 
@@ -223,6 +245,9 @@ def delete_factory_image():
 
         imagekit_api.delete_file(file_id)
 
+        # Invalidate cache for the get_products endpoint
+        cache.delete_memoized(get_products)
+
         return jsonify({"message": "Factory image deleted successfully"})
 
     except Exception as e:
@@ -230,14 +255,17 @@ def delete_factory_image():
 
 
 @app.route("/get_products", methods=["GET"])
+@cache.cached(key_prefix=lambda: f"get_products_{request.args.get('category')}_{request.args.get('subcategory', 'all')}")
 def get_products():
     """Get all products from the database"""
     # try:
     request_data = request.args
     product_category = request_data["category"]
+    print("Yes")
 
     folder_path = get_file_path(IMAGEKIT_BASE_PATH, product_category)
     product_assets = imagekit_api.list_assets(folder_path, "folder")
+    print("Yes 2")
 
     result = []
     idx = 1
