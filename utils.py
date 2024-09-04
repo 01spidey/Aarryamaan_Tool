@@ -53,7 +53,9 @@ def convert_to_txt(string):
 
 
 def get_file_path(base_path, *args):
+    print(base_path, *args)
     file_path = os.path.join(base_path, *args)
+    print(file_path)
     # file_path = file_path.replace(' ', '_')
     return file_path
 
