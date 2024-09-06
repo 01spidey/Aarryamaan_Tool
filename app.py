@@ -7,8 +7,13 @@ from utils import (
     update_name,
     get_file_path,
     get_content_from_url,
+    update_factory_images,
 )
-from CONSTANTS import get_imagekit_instance, IMAGEKIT_BASE_PATH, upload_imagekit_instance
+from CONSTANTS import (
+    get_imagekit_instance,
+    IMAGEKIT_BASE_PATH,
+    upload_imagekit_instance,
+)
 from flask_jwt_extended import (
     create_access_token,
     get_jwt_identity,
@@ -44,7 +49,7 @@ SECRET_KEY = os.getenv("ENCRYPTION_SECRET_KEY")
 
 # Configure caching
 app.config["CACHE_TYPE"] = "SimpleCache"  # or "RedisCache" for production
-app.config["CACHE_DEFAULT_TIMEOUT"] = 30000  # cache timeout in seconds
+app.config["CACHE_DEFAULT_TIMEOUT"] = 3000  # cache timeout in seconds
 cache = Cache(app)
 
 # Queue to handle requests
@@ -61,6 +66,7 @@ def decrypt_data(encrypted_data):
     decrypt_data = decrypted_bytes.decode("utf-8")
     return decrypt_data
 
+
 def process_request(request_data, func):
     """Function to process a request from the queue"""
     with processing_lock:
@@ -70,7 +76,8 @@ def process_request(request_data, func):
 
 @app.route("/")
 def sample():
-    return jsonify({"message": "Vanakkam Bro!"})
+    return jsonify({"message": "Message from the server"})
+
 
 @app.route("/login", methods=["POST"])
 def login():
@@ -98,13 +105,14 @@ def upload_product():
     """Upload a product to the database"""
     try:
         request_data = request.json
-        product_category = request_data["category"]
-        product_name = request_data["name"]
+
+        product_category = request_data["category"].replace(" ", "_")
+        product_name = request_data["name"].replace(" ", "_")
         product_description = request_data["description"]
 
-        model_image = request_data["model_image"]
-        product_image = request_data["product_image"]
-        factory_images = request_data["factory_images"]
+        model_image = request_data["model_image"]["url"]
+        product_image = request_data["product_image"]["url"]
+        factory_images = [img["url"] for img in request_data["factory_images"]]
 
         folder_path = get_file_path(IMAGEKIT_BASE_PATH, product_category, product_name)
 
@@ -130,112 +138,192 @@ def upload_product():
         return jsonify({"error": str(e)}), 500
 
 
-
-@app.route("/upload_factory_image", methods=["POST"])
-def upload_factory_image():
-    """Upload factory image to the database"""
-    try:
-        imagekit_upload_instance = upload_imagekit_instance()
-        # Extract form data
-        request_data = request.json
-        product_category = request_data["category"]
-        product_subcategory = request_data["subCategory"]
-        file_name = request_data["fileName"]
-        factory_image_file = request_data["file"]
-
-
-        if not factory_image_file:
-            return jsonify({"error": "No file uploaded"}), 400
-
-
-        folder_path = get_file_path(IMAGEKIT_BASE_PATH, product_category, product_subcategory) + "/Factory_Images"
-        print(folder_path)
-
-        result = imagekit_upload_instance.upload_file(
-            file = factory_image_file,
-            file_name = file_name,
-            options = UploadFileRequestOptions(folder = folder_path)
-        )
-
-        # Invalidate cache for the get_products endpoint
-        cache.clear()
-
-        return jsonify(
-            {
-                "message": "Factory image uploaded successfully",
-                "result": {
-                    "url": result.response_metadata.raw["url"],
-                    "fileId": result.response_metadata.raw["fileId"],
-                },
-            }
-        )
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/update_product_info", methods=["PUT"])
-def update_product_info():
-    """Update a product in the database"""
+@app.route("/update_product", methods=["POST"])
+def update_product():
+    # """Upload a product to the database"""
     try:
         request_data = request.json
 
-        if "description" in request_data:
-            product_description = request_data["description"]
-            product_name = request_data["name"]
-            product_category = request_data["category"]
+        is_changed = False
 
-            folder_path = f"{IMAGEKIT_BASE_PATH}/{product_category}/{product_name}"
-            folder_path = folder_path.replace(" ", "_")
+        old_data = request_data["old_data"]
+        new_data = request_data["new_data"]
 
-            update_description(folder_path, product_name, product_description)
+        if old_data == new_data:
+            return jsonify({"message": "No changes made"})
 
-        else:
-            product_category = request_data["category"]
-            old_product_name = request_data["old_name"]
-            new_product_name = request_data["new_name"]
+        product_category = old_data["category"].replace(" ", "_")
+
+        old_product_name = old_data["name"].replace(" ", "_")
+        old_product_description = old_data["description"]
+        old_model_image = old_data["model_image"]["url"]
+        old_product_image = old_data["product_image"]["url"]
+        old_factory_images = old_data["factory_images"]
+
+        new_product_name = new_data["name"].replace(" ", "_")
+        new_product_description = new_data["description"]
+        new_model_image = new_data["model_image"]["url"]
+        new_product_image = new_data["product_image"]["url"]
+        new_factory_images = new_data["factory_images"]
+
+        factory_images_updated = False
+
+        if old_product_name != new_product_name:
+            # Update Factory Images beforehand if product name is changed
+            update_factory_images(
+                old_factory_images,
+                new_factory_images,
+                get_file_path(IMAGEKIT_BASE_PATH, product_category, old_product_name),
+            )
+            factory_images_updated = True
 
             folder_path = get_file_path(IMAGEKIT_BASE_PATH, product_category)
-
             update_name(folder_path, old_product_name, new_product_name)
+            is_changed = True
+            print("Product name updated")
+
+        folder_path = get_file_path(
+            IMAGEKIT_BASE_PATH, product_category, new_product_name
+        )
+
+        if old_product_description != new_product_description:
+            update_description(folder_path, new_product_name, new_product_description)
+            is_changed = True
+            print("Product description updated")
+
+        if old_model_image != new_model_image:
+            imagekit_api.delete_folder(f"{folder_path}/Model")
+            imagekit_api.upload_file(new_model_image, f"model", f"{folder_path}/Model")
+            is_changed = True
+            print("Model image updated")
+
+        if old_product_image != new_product_image:
+            imagekit_api.delete_folder(f"{folder_path}/Item")
+            imagekit_api.upload_file(new_product_image, f"item", f"{folder_path}/Item")
+            is_changed = True
+            print("Product image updated")
+
+        if not factory_images_updated:
+            update_factory_images(old_factory_images, new_factory_images, folder_path)
+            is_changed = True
 
         # Invalidate cache for the get_products endpoint
-        cache.delete_memoized(get_products)
+        if is_changed:
+            print("\nSomething is changed!! Cache cleared\n")
+            cache.clear()
+            return jsonify({"message": "Product updated successfully"})
 
-        return jsonify({"message": "Product updated successfully"})
+        return jsonify({"message": "No changes made"})
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/update_image", methods=["PUT"])
-def update_image():
-    """Update an image in the database"""
-    try:
-        request_data = request.json
-        product_category = request_data["category"]
-        product_name = request_data["name"]
-        image_type = request_data["type"]
-        image_data = request_data["data"]
+# @app.route("/upload_factory_image", methods=["POST"])
+# def upload_factory_image():
+#     """Upload factory image to the database"""
+#     try:
+#         imagekit_upload_instance = upload_imagekit_instance()
+#         # Extract form data
+#         request_data = request.json
+#         product_category = request_data["category"]
+#         product_subcategory = request_data["subCategory"]
+#         file_name = request_data["fileName"]
+#         factory_image_file = request_data["file"]
 
-        folder_path = get_file_path(IMAGEKIT_BASE_PATH, product_category, product_name)
-        imagekit_api.delete_folder(f"{folder_path}/{image_type}")
-        result = imagekit_api.upload_file(
-            image_data, image_type, f"{folder_path}/{image_type}"
-        )
 
-        # Invalidate cache for the get_products endpoint
-        cache.delete_memoized(get_products)
+#         if not factory_image_file:
+#             return jsonify({"error": "No file uploaded"}), 400
 
-        return jsonify(
-            {
-                "message": "Image updated successfully",
-                "result": result.response_metadata.raw["url"],
-            }
-        )
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+#         folder_path = get_file_path(IMAGEKIT_BASE_PATH, product_category, product_subcategory) + "/Factory_Images"
+#         print(folder_path)
+
+#         result = imagekit_upload_instance.upload_file(
+#             file = factory_image_file,
+#             file_name = file_name,
+#             options = UploadFileRequestOptions(folder = folder_path)
+#         )
+
+#         # Invalidate cache for the get_products endpoint
+#         cache.clear()
+
+#         return jsonify(
+#             {
+#                 "message": "Factory image uploaded successfully",
+#                 "result": {
+#                     "url": result.response_metadata.raw["url"],
+#                     "fileId": result.response_metadata.raw["fileId"],
+#                 },
+#             }
+#         )
+
+#     except Exception as e:
+#         return jsonify({"error": str(e)}), 500
+
+
+# @app.route("/update_product_info", methods=["PUT"])
+# def update_product_info():
+#     """Update a product in the database"""
+#     try:
+#         request_data = request.json
+
+#         if "description" in request_data:
+#             product_description = request_data["description"]
+#             product_name = request_data["name"]
+#             product_category = request_data["category"]
+
+#             folder_path = f"{IMAGEKIT_BASE_PATH}/{product_category}/{product_name}"
+#             folder_path = folder_path.replace(" ", "_")
+
+#             update_description(folder_path, product_name, product_description)
+
+#         else:
+#             product_category = request_data["category"]
+#             old_product_name = request_data["old_name"]
+#             new_product_name = request_data["new_name"]
+
+#             folder_path = get_file_path(IMAGEKIT_BASE_PATH, product_category)
+
+#             update_name(folder_path, old_product_name, new_product_name)
+
+#         # Invalidate cache for the get_products endpoint
+#         cache.delete_memoized(get_products)
+
+#         return jsonify({"message": "Product updated successfully"})
+
+#     except Exception as e:
+#         return jsonify({"error": str(e)}), 500
+
+
+# @app.route("/update_image", methods=["PUT"])
+# def update_image():
+#     """Update an image in the database"""
+#     try:
+#         request_data = request.json
+#         product_category = request_data["category"]
+#         product_name = request_data["name"]
+#         image_type = request_data["type"]
+#         image_data = request_data["data"]
+
+#         folder_path = get_file_path(IMAGEKIT_BASE_PATH, product_category, product_name)
+#         imagekit_api.delete_folder(f"{folder_path}/{image_type}")
+#         result = imagekit_api.upload_file(
+#             image_data, image_type, f"{folder_path}/{image_type}"
+#         )
+
+#         # Invalidate cache for the get_products endpoint
+#         cache.delete_memoized(get_products)
+
+#         return jsonify(
+#             {
+#                 "message": "Image updated successfully",
+#                 "result": result.response_metadata.raw["url"],
+#             }
+#         )
+
+#     except Exception as e:
+#         return jsonify({"error": str(e)}), 500
 
 
 @app.route("/delete_product", methods=["DELETE"])
@@ -249,7 +337,7 @@ def delete_product():
         folder_path = get_file_path(IMAGEKIT_BASE_PATH, product_category, product_name)
 
         imagekit_api.delete_folder(folder_path)
-        
+
         # Invalidate cache for the get_products endpoint
         cache.delete_memoized(get_products)
 
@@ -259,109 +347,112 @@ def delete_product():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/delete_image", methods=["DELETE"])
-def delete_factory_image():
-    """Delete a factory image from the database"""
-    try:
-        file_id = request.args.get('fileID')
-        print(file_id)
+# @app.route("/delete_image", methods=["DELETE"])
+# def delete_factory_image():
+#     """Delete a factory image from the database"""
+#     try:
+#         file_id = request.args.get('fileID')
+#         print(file_id)
 
-        imagekit_api.delete_file(file_id)
+#         imagekit_api.delete_file(file_id)
 
-        # Invalidate cache for the get_products endpoint
-        cache.clear()
+#         # Invalidate cache for the get_products endpoint
+#         cache.clear()
 
-        return jsonify({"message": "Factory image deleted successfully"})
+#         return jsonify({"message": "Factory image deleted successfully"})
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+#     except Exception as e:
+#         return jsonify({"error": str(e)}), 500
 
 
 @app.route("/get_products", methods=["GET"])
-@cache.cached(key_prefix=lambda: f"get_products_{request.args.get('category')}_{request.args.get('subcategory', 'all')}")
+@cache.cached(
+    key_prefix=lambda: f"get_products_{request.args.get('category')}_{request.args.get('subcategory', 'all')}"
+)
 def get_products():
-    """Get all products from the database"""
+    # """Get all products from the database"""
     # try:
-    request_data = request.args
-    product_category = request_data["category"]
+        request_data = request.args
+        product_category = request_data["category"]
 
-    folder_path = get_file_path(IMAGEKIT_BASE_PATH, product_category)
-    product_assets = imagekit_api.list_assets(folder_path, "folder")
+        folder_path = get_file_path(IMAGEKIT_BASE_PATH, product_category)
+        product_assets = imagekit_api.list_assets(folder_path, "folder")
 
-    result = []
-    idx = 1
+        result = []
+        idx = 1
 
-    for product_asset in product_assets:
-        print(f'Lising assets in {folder_path}/{product_asset["name"]}')
-        product_name = product_asset["name"]
+        for product_asset in product_assets:
+            print(f'Lising assets in {folder_path}/{product_asset["name"]}')
+            product_name = product_asset["name"]
 
-        # get description
-        description_asset = imagekit_api.list_assets(
-            f"{folder_path}/{product_name}/Description", "file"
-        )
-        description_url = description_asset[0]["url"]
-        description_txt = get_content_from_url(description_url).text
+            # get description
+            description_asset = imagekit_api.list_assets(
+                f"{folder_path}/{product_name}/Description", "file"
+            )
+            description_url = description_asset[0]["url"]
+            description_txt = get_content_from_url(description_url).text
 
-        # get product image
-        product_image_asset = imagekit_api.list_assets(
-            f"{folder_path}/{product_name}/Item", "file"
-        )
-        product_image_url = product_image_asset[0]["url"]
-        product_image_fileId = product_image_asset[0]["fileId"]
+            # get product image
+            product_image_asset = imagekit_api.list_assets(
+                f"{folder_path}/{product_name}/Item", "file"
+            )
+            product_image_url = product_image_asset[0]["url"]
+            product_image_fileId = product_image_asset[0]["fileId"]
 
-        # get model image
-        model_image = imagekit_api.list_assets(
-            f"{folder_path}/{product_name}/Model", "file"
-        )
-        model_image_url = model_image[0]["url"]
-        model_image_fileId = model_image[0]["fileId"]
+            # get model image
+            model_image = imagekit_api.list_assets(
+                f"{folder_path}/{product_name}/Model", "file"
+            )
+            model_image_url = model_image[0]["url"]
+            model_image_fileId = model_image[0]["fileId"]
 
-        # get factory images
-        factory_images = imagekit_api.list_assets(
-            f"{folder_path}/{product_name}/Factory_Images", "file"
-        )
-        factory_images_data = [
+            # get factory images
+            factory_images = imagekit_api.list_assets(
+                f"{folder_path}/{product_name}/Factory_Images", "file"
+            )
+            factory_images_data = [
+                {
+                    "url": factory_image["url"],
+                    "fileId": factory_image["fileId"],
+                }
+                for factory_image in factory_images
+            ]
+
+            # format product name and category
+            product_name = product_name.replace("_", " ").title()
+            product_category = product_category.title()
+
+            result.append(
+                {
+                    "name": product_name,
+                    "category": product_category,
+                    "description": description_txt,
+                    "product_image": {
+                        "url": product_image_url,
+                        "fileId": product_image_fileId,
+                    },
+                    "model_image": {
+                        "url": model_image_url,
+                        "fileId": model_image_fileId,
+                    },
+                    "factory_images": factory_images_data,
+                    "id": idx,
+                }
+            )
+
+            idx += 1
+
+        return jsonify(
             {
-                "url": factory_image["url"],
-                "fileId": factory_image["fileId"],
-            }
-            for factory_image in factory_images
-        ]
-
-        # format product name and category
-        product_name = product_name.replace("_", " ").title()
-        product_category = product_category.title()
-
-        result.append(
-            {
-                "name": product_name,
-                "category": product_category,
-                "description": description_txt,
-                "product_image": {
-                    "url": product_image_url,
-                    "fileId": product_image_fileId,
-                },
-                "model_image": {
-                    "url": model_image_url,
-                    "fileId": model_image_fileId,
-                },
-                "factory_images": factory_images_data,
-                "id": idx,
+                "success": True,
+                "message": "Products fetched successfully",
+                "data": result,
             }
         )
-
-        idx += 1
-
-    return jsonify(
-        {
-            "success": True,
-            "message": "Products fetched successfully",
-            "data": result,
-        }
-    )
 
     # except Exception as e:
     #     return jsonify({"error": str(e)}), 500
+
 
 # Function to handle concurrent request processing
 def request_handler():
@@ -369,6 +460,7 @@ def request_handler():
         request_data, func = request_queue.get()
         process_request(request_data, func)
         request_queue.task_done()
+
 
 # Start the request handler thread
 handler_thread = threading.Thread(target=request_handler)

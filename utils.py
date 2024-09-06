@@ -31,8 +31,7 @@ def update_description(folder_path, product_name, description):
 def update_name(folder_path, old_name, new_name):
 
     imagekit_api.create_folder(new_name, folder_path)
-
-    internal_folder_paths = ["Factory Images", "Item", "Model", "Description"]
+    internal_folder_paths = ["Factory_Images", "Item", "Model", "Description"]
     for internal_folder_path in internal_folder_paths:
         old_folder_path = get_file_path(folder_path, old_name, internal_folder_path)
         new_folder_path = get_file_path(folder_path, new_name)
@@ -53,13 +52,32 @@ def convert_to_txt(string):
 
 
 def get_file_path(base_path, *args):
-    print(base_path, *args)
     file_path = os.path.join(base_path, *args)
-    print(file_path)
-    # file_path = file_path.replace(' ', '_')
     return file_path
 
 
 def get_content_from_url(url):
     response = requests.get(url)
     return response
+
+
+def process_name(name):
+    return name.replace(" ", "_")
+
+
+def update_factory_images(old_factory_images, new_factory_images, folder_path):
+    old_factory_img_fileIDs = [img["fileId"] for img in old_factory_images]
+    new_factory_img_fileIDs = [img["fileId"] for img in new_factory_images]
+
+    for factory_image in new_factory_images:
+
+        if factory_image["fileId"] not in old_factory_img_fileIDs:
+            imagekit_api.upload_file(
+                factory_image["url"], f"factory_img", f"{folder_path}/Factory_Images"
+            )
+            print("Factory image uploaded")
+
+    for factory_image in old_factory_images:
+        if factory_image["fileId"] not in new_factory_img_fileIDs:
+            imagekit_api.delete_file(factory_image["fileId"])
+            print("Factory image deleted")

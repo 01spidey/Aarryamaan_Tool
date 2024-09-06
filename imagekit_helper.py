@@ -3,15 +3,9 @@ from imagekitio.models.UploadFileRequestOptions import UploadFileRequestOptions
 from imagekitio.models.DeleteFolderRequestOptions import DeleteFolderRequestOptions
 from imagekitio.models.MoveFolderRequestOptions import MoveFolderRequestOptions
 from imagekitio.models.CreateFolderRequestOptions import CreateFolderRequestOptions
-from imagekitio.models.UpdateFileRequestOptions import UpdateFileRequestOptions
 from imagekitio.models.ListAndSearchFileRequestOptions import (
     ListAndSearchFileRequestOptions,
 )
-import urllib.parse
-
-import requests
-from requests_toolbelt import MultipartEncoder
-import base64
 
 
 class ImageKitAPI:

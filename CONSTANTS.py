@@ -24,6 +24,7 @@ def get_imagekit_instance():
         )
         return imagekit_api
 
+
 def upload_imagekit_instance():
     return ImageKit(
         private_key=os.getenv("IMAGEKIT_PRIVATE_KEY"),
