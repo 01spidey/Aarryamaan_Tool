@@ -19,6 +19,8 @@ from flask_jwt_extended import (
     get_jwt_identity,
     jwt_required,
     JWTManager,
+    verify_jwt_in_request,
+    get_jwt
 )
 from flask_cors import CORS
 from Crypto.Cipher import AES
@@ -31,6 +33,8 @@ import os
 from dotenv import load_dotenv
 from imagekitio.models.UploadFileRequestOptions import UploadFileRequestOptions
 from imagekitio import ImageKit
+from datetime import datetime, timedelta
+from functools import wraps
 
 
 load_dotenv()  # Load environment variables from .env file
@@ -55,6 +59,39 @@ cache = Cache(app)
 # Queue to handle requests
 request_queue = queue.Queue()
 processing_lock = threading.Lock()
+
+# Function to generate access token for a user with the given email and expiry time
+def generate_token(email):
+    expires = timedelta(hours=12)
+    access_token = create_access_token(identity=email, expires_delta=expires)
+    return access_token
+
+
+#Custom decorator to check for JWT in the request header
+def token_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        try:
+            # Check for JWT in the request header
+            verify_jwt_in_request()
+            claims = get_jwt()
+            
+            # Check if the token has expired
+            if datetime.fromtimestamp(claims['exp']) < datetime.utcnow():
+                return jsonify({"msg": "Token has expired"}), 401
+            
+            # Get the identity (email) from the token
+            current_user = get_jwt_identity()
+            
+            # Validate email format
+            if not current_user.endswith("@gmail.com"):
+                return jsonify({"msg": "Unauthorized: Invalid email format"}), 401
+            
+        except Exception as e:
+            return jsonify({"msg": "Unauthorized", "error": str(e)}), 401
+        
+        return f(*args, **kwargs)
+    return decorated_function
 
 
 def decrypt_data(encrypted_data):
@@ -96,11 +133,14 @@ def login():
     if email != "aarryamaanwebsite@gmail.com" or password != "website@gmail":
         return jsonify({"msg": "Bad username or password"}), 401
 
-    access_token = create_access_token(identity=email)
+    # Generate access token for the user
+    
+    access_token = generate_token(email)
     return jsonify(access_token=access_token)
 
 
 @app.route("/upload_product", methods=["POST"])
+@token_required
 def upload_product():
     """Upload a product to the database"""
     try:
@@ -139,6 +179,7 @@ def upload_product():
 
 
 @app.route("/update_product", methods=["POST"])
+@token_required
 def update_product():
     # """Upload a product to the database"""
     try:
@@ -219,114 +260,8 @@ def update_product():
         return jsonify({"error": str(e)}), 500
 
 
-# @app.route("/upload_factory_image", methods=["POST"])
-# def upload_factory_image():
-#     """Upload factory image to the database"""
-#     try:
-#         imagekit_upload_instance = upload_imagekit_instance()
-#         # Extract form data
-#         request_data = request.json
-#         product_category = request_data["category"]
-#         product_subcategory = request_data["subCategory"]
-#         file_name = request_data["fileName"]
-#         factory_image_file = request_data["file"]
-
-
-#         if not factory_image_file:
-#             return jsonify({"error": "No file uploaded"}), 400
-
-
-#         folder_path = get_file_path(IMAGEKIT_BASE_PATH, product_category, product_subcategory) + "/Factory_Images"
-#         print(folder_path)
-
-#         result = imagekit_upload_instance.upload_file(
-#             file = factory_image_file,
-#             file_name = file_name,
-#             options = UploadFileRequestOptions(folder = folder_path)
-#         )
-
-#         # Invalidate cache for the get_products endpoint
-#         cache.clear()
-
-#         return jsonify(
-#             {
-#                 "message": "Factory image uploaded successfully",
-#                 "result": {
-#                     "url": result.response_metadata.raw["url"],
-#                     "fileId": result.response_metadata.raw["fileId"],
-#                 },
-#             }
-#         )
-
-#     except Exception as e:
-#         return jsonify({"error": str(e)}), 500
-
-
-# @app.route("/update_product_info", methods=["PUT"])
-# def update_product_info():
-#     """Update a product in the database"""
-#     try:
-#         request_data = request.json
-
-#         if "description" in request_data:
-#             product_description = request_data["description"]
-#             product_name = request_data["name"]
-#             product_category = request_data["category"]
-
-#             folder_path = f"{IMAGEKIT_BASE_PATH}/{product_category}/{product_name}"
-#             folder_path = folder_path.replace(" ", "_")
-
-#             update_description(folder_path, product_name, product_description)
-
-#         else:
-#             product_category = request_data["category"]
-#             old_product_name = request_data["old_name"]
-#             new_product_name = request_data["new_name"]
-
-#             folder_path = get_file_path(IMAGEKIT_BASE_PATH, product_category)
-
-#             update_name(folder_path, old_product_name, new_product_name)
-
-#         # Invalidate cache for the get_products endpoint
-#         cache.delete_memoized(get_products)
-
-#         return jsonify({"message": "Product updated successfully"})
-
-#     except Exception as e:
-#         return jsonify({"error": str(e)}), 500
-
-
-# @app.route("/update_image", methods=["PUT"])
-# def update_image():
-#     """Update an image in the database"""
-#     try:
-#         request_data = request.json
-#         product_category = request_data["category"]
-#         product_name = request_data["name"]
-#         image_type = request_data["type"]
-#         image_data = request_data["data"]
-
-#         folder_path = get_file_path(IMAGEKIT_BASE_PATH, product_category, product_name)
-#         imagekit_api.delete_folder(f"{folder_path}/{image_type}")
-#         result = imagekit_api.upload_file(
-#             image_data, image_type, f"{folder_path}/{image_type}"
-#         )
-
-#         # Invalidate cache for the get_products endpoint
-#         cache.delete_memoized(get_products)
-
-#         return jsonify(
-#             {
-#                 "message": "Image updated successfully",
-#                 "result": result.response_metadata.raw["url"],
-#             }
-#         )
-
-#     except Exception as e:
-#         return jsonify({"error": str(e)}), 500
-
-
 @app.route("/delete_product", methods=["DELETE"])
+@token_required
 def delete_product():
     """Delete a product from the database"""
     try:
@@ -366,6 +301,7 @@ def delete_product():
 
 
 @app.route("/get_products", methods=["GET"])
+@token_required
 @cache.cached(
     key_prefix=lambda: f"get_products_{request.args.get('category')}_{request.args.get('subcategory', 'all')}"
 )
@@ -469,4 +405,4 @@ handler_thread.start()
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=True, host='0.0.0.0', port=8080)
